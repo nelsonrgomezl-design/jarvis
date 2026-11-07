@@ -88,30 +88,39 @@ def limpiar_base_datos():
 inicializar_db()
 
 # --- PANEL LATERAL (CONFIGURACIÓN Y CREDENCIALES) ---
+# --- PANEL LATERAL (CONFIGURACIÓN Y CREDENCIALES) ---
 with st.sidebar:
   st.title("⚡ Jarvis Control (Cloud)")
   st.caption("Asistente comercial potenciado con Google Gemini API.")
 
   st.divider()
 
-  # Configuración de la API Key de Gemini
-  st.subheader("🔑 Credenciales")
-  api_key_input = st.text_input(
-      "Gemini API Key", type="password", placeholder="Pega tu clave aquí..."
+  # Configuración automática de la API Key (Oculta el cuadro de texto)
+  # Reemplaza 'TU_API_KEY_REAL' por tu clave generada en Google AI Studio si deseas dejarla fija
+  import os
+
+  API_KEY_FIJA = (
+      "TU_API_KEY_REAL"  # <--- Pega tu clave de Google AI Studio aquí entre comillas
   )
 
-  if api_key_input:
-    genai.configure(api_key=api_key_input)
+  if API_KEY_FIJA and API_KEY_FIJA != "TU_API_KEY_REAL":
+    genai.configure(api_key=API_KEY_FIJA)
   elif "GEMINI_API_KEY" in os.environ:
     genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+  else:
+    # Si no hay clave, usa un respaldo de entorno o solicita configurar secretos en Streamlit
+    st.warning(
+        "⚠️ Configura tu API Key en los secretos de Streamlit Cloud para no"
+        " ingresarla."
+    )
 
   st.divider()
 
-  # Selector de modelo de Gemini (Actualizado con modelos vigentes)
+  # Selector de modelo de Gemini (Usa el modelo estable actual)
   st.subheader("🤖 Modelo")
   modelo_seleccionado = st.selectbox(
       "Selecciona el Modelo",
-      ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
+      ["gemini-1.5-flash", "gemini-1.5-pro"],
       index=0,
   )
 
@@ -138,7 +147,6 @@ with st.sidebar:
     if "chat_session" in st.session_state:
       del st.session_state.chat_session
     st.rerun()
-
 # --- INTERFAZ PRINCIPAL DE CHAT ---
 st.title("💼 Jarvis - Asistente Comercial Gemini Pro")
 st.markdown(
