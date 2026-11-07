@@ -95,7 +95,7 @@ with st.sidebar:
   st.divider()
 
   st.subheader("🤖 Modelo Activo")
-  st.info("Modelo: gemini-2.5-flash")
+  st.info("Modelo: gemini-3.8-flash")
 
   st.divider()
   st.subheader("📂 Documentos de Negocio")
@@ -160,9 +160,9 @@ if pregunta_usuario:
             rol_str = "Usuario" if r == "user" else "Jarvis"
             prompt_optimizado += f"{rol_str}: {c}\n"
 
-          # Usamos explícitamente gemini-2.5-flash compatible con el SDK moderno
+          # Usamos explícitamente gemini-3.8-flash que es el modelo actual requerido
           response = client.models.generate_content(
-              model="gemini-2.5-flash",
+              model="gemini-3.8-flash",
               contents=prompt_optimizado,
               config=types.GenerateContentConfig(
                   system_instruction=SYSTEM_PROMPT,
