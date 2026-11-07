@@ -5,7 +5,7 @@ import streamlit as st
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-# --- CONFIGURACIÓN DE LA PÁGINA ---
+# --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
     page_title="Jarvis Business AI - Gemini Cloud",
     page_icon="⚡",
@@ -26,7 +26,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- CONFIGURACIÓN DE API KEY (CONFIGURADA AUTOMÁTICAMENTE) ---
+# --- CONFIGURACIÓN DE API KEY ---
 API_KEY_FIJA = "AQ.Ab8RN6K6jGgFiPwQySgVLk37wvKQDEe_qH2c223euWTewfizsQ"
 
 api_key = API_KEY_FIJA
@@ -91,7 +91,7 @@ with st.sidebar:
   st.divider()
 
   st.subheader("🤖 Modelo")
-  st.info("Modelo activo: gemini-1.5-flash")
+  st.info("Modelo activo: gemini-2.5-flash")
 
   st.divider()
 
@@ -131,11 +131,12 @@ system_instruction = (
     " y orientado a resultados."
 )
 
-# Inicializar sesión del chat en Streamlit State si no existe
+# Inicializar sesión del chat en Streamlit State
 if "chat_session" not in st.session_state:
   try:
+    # Usamos gemini-2.5-flash que es la versión compatible actual
     model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
+        model_name="gemini-2.5-flash",
         system_instruction=system_instruction,
     )
     historial_previo = []
@@ -184,7 +185,7 @@ if pregunta_usuario:
         # Guardar respuesta del asistente en SQLite
         guardar_mensaje("assistant", respuesta_texto)
 
-        # Generación de PDF si lo piden
+        # Generación de PDF si se solicita
         if (
             "pdf" in pregunta_usuario.lower()
             or "reporte" in pregunta_usuario.lower()
