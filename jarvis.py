@@ -50,13 +50,13 @@ def inicializar_db():
     conexion.close()
 
 def cargar_historial_bd(limite=8):
-    """Carga solo los últimos N mensajes para mantener la llamada ultrarrápida."""
+    """Carga solo los últimos mensajes para velocidad máxima."""
     conexion = sqlite3.connect(DB_NAME)
     cursor = conexion.cursor()
     cursor.execute("SELECT rol, contenido FROM mensajes ORDER BY id DESC LIMIT ?", (limite,))
     filas = cursor.fetchall()
     conexion.close()
-    return filas[::-1] # Invertir para mantener orden cronológico
+    return filas[::-1]
 
 def guardar_mensaje(rol, contenido):
     conexion = sqlite3.connect(DB_NAME)
@@ -80,8 +80,8 @@ with st.sidebar:
     st.caption("Asistente comercial de alta velocidad.")
     st.divider()
 
-    st.subheader("🤖 Modo de Velocidad")
-    st.success("⚡ Modo Ultrarrápido Activo")
+    st.subheader("🤖 Modelo Activo")
+    st.info("Modelo: gemini-flash-latest")
 
     st.divider()
     st.subheader("📂 Documentos de Negocio")
@@ -89,7 +89,7 @@ with st.sidebar:
     texto_archivo = ""
     if archivo_subido is not None:
         texto_archivo = archivo_subido.read().decode("utf-8")
-        st.success(f"¡Archivo activo!")
+        st.success("¡Archivo activo!")
 
     st.divider()
     if st.button("🧹 Borrar Memoria Completa"):
@@ -103,10 +103,10 @@ st.divider()
 
 SYSTEM_PROMPT = (
     "Eres Jarvis, un asistente experto en gestión de negocios, logística, "
-    "costos y estrategia comercial. Responde de forma directa, concisa, precisa y profesional."
+    "costos y estrategia comercial. Responde de forma directa, concisa y profesional."
 )
 
-# Mostrar todo el historial almacenado
+# Mostrar todo el historial
 conexion = sqlite3.connect(DB_NAME)
 cursor = conexion.cursor()
 cursor.execute("SELECT rol, contenido FROM mensajes")
@@ -128,25 +128,22 @@ if pregunta_usuario:
         if texto_archivo and len(todas_las_filas) == 0:
             contenido_final = f"Documento cargado:\n{texto_archivo}\n\nPregunta: {pregunta_usuario}"
 
-        # Guardar y renderizar mensaje del usuario
         guardar_mensaje("user", pregunta_usuario)
         with st.chat_message("user", avatar="👤"):
             st.markdown(pregunta_usuario)
 
-        # Generar respuesta ultra rápida
         with st.chat_message("assistant", avatar="⚡"):
             with st.spinner("⚡ Jarvis respondiendo..."):
                 try:
-                    # Construir historial optimizado (últimos mensajes)
                     mensajes_recientes = cargar_historial_bd(limite=6)
                     prompt_optimizado = ""
                     for r, c in mensajes_recientes:
                         rol_str = "Usuario" if r == "user" else "Jarvis"
                         prompt_optimizado += f"{rol_str}: {c}\n"
 
-                    # Llamada a la API con System Instruction nativa y modelo Flash alta velocidad
+                    # Se utiliza 'gemini-flash-latest' que es el compatible con genai.Client()
                     response = client.models.generate_content(
-                        model="gemini-1.5-flash",
+                        model="gemini-flash-latest",
                         contents=prompt_optimizado,
                         config=types.GenerateContentConfig(
                             system_instruction=SYSTEM_PROMPT,
@@ -158,7 +155,6 @@ if pregunta_usuario:
                     st.markdown(respuesta_texto)
                     guardar_mensaje("assistant", respuesta_texto)
 
-                    # Reporte PDF opcional
                     if "pdf" in pregunta_usuario.lower() or "reporte" in pregunta_usuario.lower():
                         nombre_pdf = "reporte_jarvis.pdf"
                         c = canvas.Canvas(nombre_pdf, pagesize=letter)
