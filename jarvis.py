@@ -2,6 +2,7 @@ import os
 import sqlite3
 import streamlit as st
 from google import genai
+from google.genai import types
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
@@ -13,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Estilos CSS personalizados
+# Estilos CSS
 st.markdown(
     """
     <style>
@@ -26,198 +27,149 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- INICIALIZACIÓN DEL CLIENTE Y API KEY ---
+# --- INICIALIZACIÓN DE API KEY Y CLIENTE ---
 API_KEY_FIJA = "AQ.Ab8RN6K6jGgFiPwQySgVLk37wvKQDEe_qH2c223euWTewfizsQ"
+api_key = API_KEY_FIJA if "AQ.Ab8RN" in API_KEY_FIJA else (os.environ.get("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY"))
 
-api_key = API_KEY_FIJA
-if not api_key or "AQ.Ab8RN" not in api_key:
-  api_key = os.environ.get("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
-
-client = None
-if api_key:
-  try:
-    client = genai.Client(api_key=api_key)
-  except Exception as e:
-    st.error(f"Error inicializando el cliente GenAI: {e}")
+client = genai.Client(api_key=api_key) if api_key else None
 
 # --- BASE DE DATOS SQLITE (Memoria Persistente) ---
 DB_NAME = "historial_jarvis.db"
 
-
 def inicializar_db():
-  conexion = sqlite3.connect(DB_NAME)
-  cursor = conexion.cursor()
-  cursor.execute("""
+    conexion = sqlite3.connect(DB_NAME)
+    cursor = conexion.cursor()
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS mensajes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             rol TEXT,
             contenido TEXT
         )
     """)
-  conexion.commit()
-  conexion.close()
+    conexion.commit()
+    conexion.close()
 
-
-def cargar_historial_bd():
-  conexion = sqlite3.connect(DB_NAME)
-  cursor = conexion.cursor()
-  cursor.execute("SELECT rol, contenido FROM mensajes")
-  filas = cursor.fetchall()
-  conexion.close()
-  return filas
-
+def cargar_historial_bd(limite=8):
+    """Carga solo los últimos N mensajes para mantener la llamada ultrarrápida."""
+    conexion = sqlite3.connect(DB_NAME)
+    cursor = conexion.cursor()
+    cursor.execute("SELECT rol, contenido FROM mensajes ORDER BY id DESC LIMIT ?", (limite,))
+    filas = cursor.fetchall()
+    conexion.close()
+    return filas[::-1] # Invertir para mantener orden cronológico
 
 def guardar_mensaje(rol, contenido):
-  conexion = sqlite3.connect(DB_NAME)
-  cursor = conexion.cursor()
-  cursor.execute(
-      "INSERT INTO mensajes (rol, contenido) VALUES (?, ?)", (rol, contenido)
-  )
-  conexion.commit()
-  conexion.close()
-
+    conexion = sqlite3.connect(DB_NAME)
+    cursor = conexion.cursor()
+    cursor.execute("INSERT INTO mensajes (rol, contenido) VALUES (?, ?)", (rol, contenido))
+    conexion.commit()
+    conexion.close()
 
 def limpiar_base_datos():
-  conexion = sqlite3.connect(DB_NAME)
-  cursor = conexion.cursor()
-  cursor.execute("DELETE FROM mensajes")
-  conexion.commit()
-  conexion.close()
-
+    conexion = sqlite3.connect(DB_NAME)
+    cursor = conexion.cursor()
+    cursor.execute("DELETE FROM mensajes")
+    conexion.commit()
+    conexion.close()
 
 inicializar_db()
 
 # --- PANEL LATERAL ---
 with st.sidebar:
-  st.title("⚡ Jarvis Control (Cloud)")
-  st.caption("Asistente comercial potenciado con Google Gemini API.")
-  st.divider()
+    st.title("⚡ Jarvis Control (Cloud)")
+    st.caption("Asistente comercial de alta velocidad.")
+    st.divider()
 
-  st.subheader("🤖 Modelo")
-  st.info("Modelo activo: Respaldo Automático Inteligente")
+    st.subheader("🤖 Modo de Velocidad")
+    st.success("⚡ Modo Ultrarrápido Activo")
 
-  st.divider()
+    st.divider()
+    st.subheader("📂 Documentos de Negocio")
+    archivo_subido = st.file_uploader("Sube un archivo (.txt)", type=["txt"])
+    texto_archivo = ""
+    if archivo_subido is not None:
+        texto_archivo = archivo_subido.read().decode("utf-8")
+        st.success(f"¡Archivo activo!")
 
-  st.subheader("📂 Documentos de Negocio")
-  archivo_subido = st.file_uploader(
-      "Sube un archivo de texto (.txt)", type=["txt"]
-  )
+    st.divider()
+    if st.button("🧹 Borrar Memoria Completa"):
+        limpiar_base_datos()
+        st.rerun()
 
-  texto_archivo = ""
-  if archivo_subido is not None:
-    texto_archivo = archivo_subido.read().decode("utf-8")
-    st.success(f"¡Archivo '{archivo_subido.name}' activo!")
-    with st.expander("Ver contenido"):
-      st.text(texto_archivo)
-
-  st.divider()
-
-  if st.button("🧹 Borrar Memoria Completa"):
-    limpiar_base_datos()
-    st.rerun()
-
-# --- INTERFAZ PRINCIPAL DE CHAT ---
+# --- INTERFAZ PRINCIPAL ---
 st.title("💼 Jarvis - Asistente Comercial Gemini Pro")
-st.markdown(
-    "Operando con la potencia en la nube de Google Gemini. Memoria"
-    " persistente, análisis de archivos y reportes PDF."
-)
+st.markdown("Optimizado para máxima velocidad de respuesta en la nube.")
 st.divider()
 
-system_instruction = (
-    "Eres Jarvis, un asistente de IA experto en gestión de negocios,"
-    " optimización operativa, logística y estrategia comercial. Ayudas a"
-    " estructurar procesos, analizar métricas, realizar cálculos matemáticos"
-    " complejos de costos y tomar decisiones con un tono profesional, directo"
-    " y orientado a resultados."
+SYSTEM_PROMPT = (
+    "Eres Jarvis, un asistente experto en gestión de negocios, logística, "
+    "costos y estrategia comercial. Responde de forma directa, concisa, precisa y profesional."
 )
 
-# Mostrar historial visual en pantalla
-filas_bd_visual = cargar_historial_bd()
-for rol, contenido in filas_bd_visual:
-  with st.chat_message(rol, avatar="⚡" if rol == "assistant" else "👤"):
-    st.markdown(contenido)
+# Mostrar todo el historial almacenado
+conexion = sqlite3.connect(DB_NAME)
+cursor = conexion.cursor()
+cursor.execute("SELECT rol, contenido FROM mensajes")
+todas_las_filas = cursor.fetchall()
+conexion.close()
+
+for rol, contenido in todas_las_filas:
+    with st.chat_message(rol, avatar="⚡" if rol == "assistant" else "👤"):
+        st.markdown(contenido)
 
 # ENTRADA DEL USUARIO
-pregunta_usuario = st.chat_input(
-    "Escribe tu consulta de negocio, cálculo o pide un reporte en PDF..."
-)
+pregunta_usuario = st.chat_input("Escribe tu consulta de negocio o pide un reporte en PDF...")
 
 if pregunta_usuario:
-  if not client:
-    st.error("❌ No se encontró la API Key de Gemini configurada.")
-  else:
-    contenido_final = pregunta_usuario
-    if texto_archivo and len(filas_bd_visual) == 0:
-      contenido_final = (
-          f"Información del documento del negocio cargado:\n\n{texto_archivo}\n\nCon"
-          f" base en esto responde: {pregunta_usuario}"
-      )
+    if not client:
+        st.error("❌ No se encontró la API Key de Gemini.")
+    else:
+        contenido_final = pregunta_usuario
+        if texto_archivo and len(todas_las_filas) == 0:
+            contenido_final = f"Documento cargado:\n{texto_archivo}\n\nPregunta: {pregunta_usuario}"
 
-    # 1. Guardar y mostrar mensaje del usuario
-    guardar_mensaje("user", pregunta_usuario)
-    with st.chat_message("user", avatar="👤"):
-      st.markdown(pregunta_usuario)
+        # Guardar y renderizar mensaje del usuario
+        guardar_mensaje("user", pregunta_usuario)
+        with st.chat_message("user", avatar="👤"):
+            st.markdown(pregunta_usuario)
 
-    # 2. Generar respuesta de Jarvis con respaldo automático de modelos
-    with st.chat_message("assistant", avatar="⚡"):
-      with st.spinner("Jarvis procesando con respaldo automático..."):
-        try:
-          prompt_completo = f"Instrucciones de sistema: {system_instruction}\n\n"
-          for r, c in cargar_historial_bd():
-            rol_str = "Usuario" if r == "user" else "Jarvis"
-            prompt_completo += f"{rol_str}: {c}\n"
+        # Generar respuesta ultra rápida
+        with st.chat_message("assistant", avatar="⚡"):
+            with st.spinner("⚡ Jarvis respondiendo..."):
+                try:
+                    # Construir historial optimizado (últimos mensajes)
+                    mensajes_recientes = cargar_historial_bd(limite=6)
+                    prompt_optimizado = ""
+                    for r, c in mensajes_recientes:
+                        rol_str = "Usuario" if r == "user" else "Jarvis"
+                        prompt_optimizado += f"{rol_str}: {c}\n"
 
-          # Lista de modelos que intentará secuencialmente si hay errores de alta demanda (503)
-          modelos_disponibles = [
-              "gemini-3.8-flash",
-              "gemini-2.5-flash",
-              "gemini-1.5-flash",
-          ]
-          response = None
-          ultimo_error = None
+                    # Llamada a la API con System Instruction nativa y modelo Flash alta velocidad
+                    response = client.models.generate_content(
+                        model="gemini-1.5-flash",
+                        contents=prompt_optimizado,
+                        config=types.GenerateContentConfig(
+                            system_instruction=SYSTEM_PROMPT,
+                            temperature=0.7,
+                        )
+                    )
 
-          for modelo in modelos_disponibles:
-            try:
-              response = client.models.generate_content(
-                  model=modelo,
-                  contents=prompt_completo,
-              )
-              if response and response.text:
-                break
-            except Exception as ex:
-              ultimo_error = ex
-              continue
+                    respuesta_texto = response.text
+                    st.markdown(respuesta_texto)
+                    guardar_mensaje("assistant", respuesta_texto)
 
-          if response is None or not response.text:
-            raise ultimo_error or Exception(
-                "Todos los modelos de respaldo están ocupados temporalmente."
-            )
+                    # Reporte PDF opcional
+                    if "pdf" in pregunta_usuario.lower() or "reporte" in pregunta_usuario.lower():
+                        nombre_pdf = "reporte_jarvis.pdf"
+                        c = canvas.Canvas(nombre_pdf, pagesize=letter)
+                        c.drawString(100, 750, "Reporte Oficial - Jarvis Business Management")
+                        y = 700
+                        for linea in respuesta_texto.split("\n"):
+                            if y > 50:
+                                c.drawString(100, y, linea[:90])
+                                y -= 20
+                        c.save()
+                        st.success(f"📄 ¡PDF generado: '{nombre_pdf}'!")
 
-          respuesta_texto = response.text
-          st.markdown(respuesta_texto)
-
-          # Guardar respuesta del asistente en SQLite
-          guardar_mensaje("assistant", respuesta_texto)
-
-          # Generación de PDF si se solicita
-          if (
-              "pdf" in pregunta_usuario.lower()
-              or "reporte" in pregunta_usuario.lower()
-          ):
-            nombre_pdf = "reporte_jarvis.pdf"
-            c = canvas.Canvas(nombre_pdf, pagesize=letter)
-            c.drawString(
-                100, 750, "Reporte Oficial - Jarvis Business Management"
-            )
-            c.drawString(100, 730, "Resumen de operaciones y cálculos:")
-            y = 700
-            for linea in respuesta_texto.split("\n"):
-              if y > 50:
-                c.drawString(100, y, linea[:90])
-                y -= 20
-            c.save()
-            st.success(f"📄 ¡PDF generado con éxito: '{nombre_pdf}'!")
-
-        except Exception as e:
-          st.error(f"❌ Error al comunicarse con Gemini: {e}")
+                except Exception as e:
+                    st.error(f"❌ Error al comunicarse con Gemini: {e}")
