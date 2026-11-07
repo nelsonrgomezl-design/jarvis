@@ -1,11 +1,11 @@
 import os
 import sqlite3
-from google import genai
+import google.generativeai as genai
 import streamlit as st
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-# --- CONFIGURACIÓN DE LA PÁGINA Y ESTILO VISUAL ---
+# --- CONFIGURACIÓN DE LA PÁGINA Y ESTILO VISUAL AVANZADO ---
 st.set_page_config(
     page_title="Jarvis Business AI - Gemini Cloud",
     page_icon="⚡",
@@ -13,6 +13,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Estilos CSS personalizados
 st.markdown(
     """
     <style>
@@ -25,61 +26,23 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- PANEL LATERAL PARA GESTIÓN DE CREDENCIALES ---
-with st.sidebar:
-  st.title("⚡ Jarvis Control (Cloud)")
-  st.caption("Asistente comercial potenciado con Google Gemini API.")
-  st.divider()
+# --- CONFIGURACIÓN DE LA API KEY ---
+# PEGA TU CLAVE DE GOOGLE AI STUDIO AQUÍ ENTRE LAS COMILLAS:
+API_KEY_FIJA = "PEGA_AQUI_TU_API_KEY"
 
-  # Intentar obtener clave de secretos o entorno
-  api_key = None
+# Lógica para detectar la clave automáticamente
+api_key = API_KEY_FIJA
+
+if not api_key or api_key == "PEGA_AQUI_TU_API_KEY":
   if "GEMINI_API_KEY" in st.secrets:
     api_key = st.secrets["GEMINI_API_KEY"]
   elif "GEMINI_API_KEY" in os.environ:
     api_key = os.environ["GEMINI_API_KEY"]
 
-  # Si no está configurada globalmente, pedirla de manera segura en la interfaz
-  if not api_key:
-    st.subheader("🔑 Credenciales")
-    api_key_input = st.text_input(
-        "Gemini API Key", type="password", placeholder="Pega tu clave aquí..."
-    )
-    if api_key_input:
-      api_key = api_key_input
+if api_key and api_key != "PEGA_AQUI_TU_API_KEY":
+  genai.configure(api_key=api_key)
 
-  st.subheader("🤖 Modelo")
-  st.info("Modelo activo: gemini-flash-latest")
-
-  st.divider()
-  st.subheader("📂 Documentos de Negocio")
-  archivo_subido = st.file_uploader(
-      "Sube un archivo de texto (.txt)", type=["txt"]
-  )
-  texto_archivo = ""
-  if archivo_subido is not None:
-    texto_archivo = archivo_subido.read().decode("utf-8")
-    st.success(f"¡Archivo '{archivo_subido.name}' activo!")
-
-  st.divider()
-  if st.button("🧹 Borrar Memoria Completa"):
-    conexion = sqlite3.connect("historial_jarvis.db")
-    cursor = conexion.cursor()
-    cursor.execute("DELETE FROM mensajes")
-    conexion.commit()
-    conexion.close()
-    if "chat_session" in st.session_state:
-      del st.session_state.chat_session
-    st.rerun()
-
-# --- INICIALIZAR CLIENTE DE GEMINI DE FORMA SEGURA ---
-client = None
-if api_key:
-  try:
-    client = genai.Client(api_key=api_key)
-  except Exception as e:
-    st.sidebar.error(f"Error al configurar cliente: {e}")
-
-# --- BASE DE DATOS SQLITE ---
+# --- BASE DE DATOS SQLITE (Memoria Persistente) ---
 DB_NAME = "historial_jarvis.db"
 
 
@@ -116,7 +79,49 @@ def guardar_mensaje(rol, contenido):
   conexion.close()
 
 
+def limpiar_base_datos():
+  conexion = sqlite3.connect(DB_NAME)
+  cursor = conexion.cursor()
+  cursor.execute("DELETE FROM mensajes")
+  conexion.commit()
+  conexion.close()
+
+
+# Inicializar base de datos
 inicializar_db()
+
+# --- PANEL LATERAL (CONFIGURACIÓN) ---
+with st.sidebar:
+  st.title("⚡ Jarvis Control (Cloud)")
+  st.caption("Asistente comercial potenciado con Google Gemini API.")
+  st.divider()
+
+  st.subheader("🤖 Modelo")
+  st.info("Modelo activo: gemini-1.5-flash")
+
+  st.divider()
+
+  # Carga de archivos de texto
+  st.subheader("📂 Documentos de Negocio")
+  archivo_subido = st.file_uploader(
+      "Sube un archivo de texto (.txt)", type=["txt"]
+  )
+
+  texto_archivo = ""
+  if archivo_subido is not None:
+    texto_archivo = archivo_subido.read().decode("utf-8")
+    st.success(f"¡Archivo '{archivo_subido.name}' activo!")
+    with st.expander("Ver contenido"):
+      st.text(texto_archivo)
+
+  st.divider()
+
+  # Utilidades y limpieza
+  if st.button("🧹 Borrar Memoria Completa"):
+    limpiar_base_datos()
+    if "chat_session" in st.session_state:
+      del st.session_state.chat_session
+    st.rerun()
 
 # --- INTERFAZ PRINCIPAL DE CHAT ---
 st.title("💼 Jarvis - Asistente Comercial Gemini Pro")
@@ -126,6 +131,14 @@ st.markdown(
 )
 st.divider()
 
+system_instruction = (
+    "Eres Jarvis, un asistente de IA experto en gestión de negocios,"
+    " optimización operativa, logística y estrategia comercial. Ayudas a"
+    " estructurar procesos, analizar métricas, realizar cálculos matemáticos"
+    " complejos de costos y tomar decisiones con un tono profesional, directo"
+    " y orientado a resultados."
+)
+
 # Mostrar historial visual en pantalla
 filas_bd_visual = cargar_historial_bd()
 for rol, contenido in filas_bd_visual:
@@ -133,15 +146,16 @@ for rol, contenido in filas_bd_visual:
       contenido
   )
 
+# Entrada de texto del usuario
 pregunta_usuario = st.chat_input(
     "Escribe tu consulta de negocio, cálculo o pide un reporte en PDF..."
 )
 
 if pregunta_usuario:
-  if not client:
+  if not api_key or api_key == "PEGA_AQUI_TU_API_KEY":
     st.error(
-        "❌ Por favor ingresa tu Gemini API Key en el panel lateral o en los"
-        " Secretos de Streamlit."
+        "❌ Pega tu Gemini API Key en la línea 30 del archivo jarvis.py en"
+        " GitHub."
     )
   else:
     contenido_final = pregunta_usuario
@@ -150,45 +164,3 @@ if pregunta_usuario:
           f"Información del documento del negocio cargado:\n\n{texto_archivo}\n\nCon"
           f" base en esto responde: {pregunta_usuario}"
       )
-
-    guardar_mensaje("user", pregunta_usuario)
-    st.chat_message("user", avatar="👤").markdown(pregunta_usuario)
-
-    with st.chat_message("assistant", avatar="⚡"):
-      with st.spinner("Jarvis procesando en la nube..."):
-        try:
-          # Reconstruir el historial acumulado de la base de datos para la API moderna
-          historial_mensajes = []
-          for r, c in cargar_historial_bd():
-            historial_mensajes.append(c)
-
-          # Llamada moderna optimizada con el cliente oficial
-          response = client.models.generate_content(
-              model="gemini-flash-latest",
-              contents=historial_mensajes,
-          )
-          respuesta_texto = response.text
-          st.markdown(respuesta_texto)
-          guardar_mensaje("assistant", respuesta_texto)
-
-          # Generación automática de PDF si se solicita
-          if (
-              "pdf" in pregunta_usuario.lower()
-              or "reporte" in pregunta_usuario.lower()
-          ):
-            nombre_pdf = "reporte_jarvis.pdf"
-            c = canvas.Canvas(nombre_pdf, pagesize=letter)
-            c.drawString(
-                100, 750, "Reporte Oficial - Jarvis Business Management"
-            )
-            c.drawString(100, 730, "Resumen de operaciones y cálculos:")
-            y = 700
-            for linea in respuesta_texto.split("\n"):
-              if y > 50:
-                c.drawString(100, y, linea[:90])
-                y -= 20
-            c.save()
-            st.success(f"📄 ¡PDF generado con éxito: '{nombre_pdf}'!")
-
-        except Exception as e:
-          st.error(f"❌ Error al comunicarse con la API de Gemini: {e}")
