@@ -1,6 +1,6 @@
 import os
 import sqlite3
-import google.generativeai as genai
+from google import genai
 import streamlit as st
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
@@ -39,17 +39,15 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- CONFIGURACIÓN AUTOMÁTICA DE LA API KEY ---
-# Si configuras tu clave en los secretos de Streamlit Cloud, se leerá sola.
-# O puedes pegarla directamente aquí entre las comillas si prefieres dejarla fija:
-API_KEY_FIJA = ""
-
-if API_KEY_FIJA:
-  genai.configure(api_key=API_KEY_FIJA)
-elif "GEMINI_API_KEY" in st.secrets:
-  genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+# --- CONFIGURACIÓN DEL CLIENTE DE GEMINI ---
+api_key_val = None
+if "GEMINI_API_KEY" in st.secrets:
+  api_key_val = st.secrets["GEMINI_API_KEY"]
 elif "GEMINI_API_KEY" in os.environ:
-  genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+  api_key_val = os.environ["GEMINI_API_KEY"]
+
+# Inicializar cliente oficial de Google GenAI
+client = genai.Client(api_key=api_key_val)
 
 # --- BASE DE DATOS SQLITE (Memoria Persistente) ---
 DB_NAME = "historial_jarvis.db"
@@ -106,13 +104,10 @@ with st.sidebar:
 
   st.divider()
 
-  # Selector de modelo de Gemini (Modelos estables y vigentes)
+  # Modelo estable universal actual
   st.subheader("🤖 Modelo")
-  modelo_seleccionado = st.selectbox(
-      "Selecciona el Modelo",
-      ["gemini-1.5-flash", "gemini-1.5-pro"],
-      index=0,
-  )
+  modelo_seleccionado = "gemini-flash-latest"
+  st.text("Activo: gemini-flash-latest")
 
   st.divider()
 
@@ -146,7 +141,7 @@ st.markdown(
 )
 st.divider()
 
-# Configurar el modelo y la sesión de chat con el System Prompt inicial
+# System prompt del asistente
 system_instruction = (
     "Eres Jarvis, un asistente de IA experto en gestión de negocios,"
     " optimización operativa, logística y estrategia comercial. Ayudas a"
@@ -155,37 +150,12 @@ system_instruction = (
     " y orientado a resultados."
 )
 
-if "chat_session" not in st.session_state:
-  try:
-    generation_config = {"temperature": 0.7}
-    gemini_model = genai.GenerativeModel(
-        model_name=modelo_seleccionado,
-        system_instruction=system_instruction,
-        generation_config=generation_config,
-    )
-
-    # Reconstruir el historial de la sesión de chat usando SQLite
-    historial_previo = []
-    filas_bd = cargar_historial_bd()
-
-    for rol, contenido in filas_bd:
-      rol_gemini = "user" if rol == "user" else "model"
-      historial_previo.append({"role": rol_gemini, "parts": [contenido]})
-
-    st.session_state.chat_session = gemini_model.start_chat(
-        history=historial_previo
-    )
-  except Exception as e:
-    st.warning(
-        "⚠️ Configura tu API Key en los secretos de Streamlit Cloud o en el"
-        " código para iniciar."
-    )
-
 # Mostrar el historial visual en pantalla cargado desde la BD
 filas_bd_visual = cargar_historial_bd()
 for rol, contenido in filas_bd_visual:
-  with st.chat_message(rol, avatar="⚡" if rol == "assistant" else "👤"):
-    st.markdown(contenido)
+  st.chat_message(rol, avatar="⚡" if rol == "assistant" else "👤").markdown(
+      contenido
+  )
 
 # Entrada de texto del usuario
 pregunta_usuario = st.chat_input(
@@ -202,24 +172,23 @@ if pregunta_usuario:
 
   # Guardar y mostrar mensaje del usuario
   guardar_mensaje("user", pregunta_usuario)
-  with st.chat_message("user", avatar="👤"):
-    st.markdown(pregunta_usuario)
+  st.chat_message("user", avatar="👤").markdown(pregunta_usuario)
 
-  # Generar respuesta con la API de Gemini
+  # Generar respuesta con la API de Gemini (Nueva estructura cliente)
   with st.chat_message("assistant", avatar="⚡"):
-    with st.spinner(f"Jarvis ({modelo_seleccionado}) procesando en la nube..."):
+    with st.spinner("Jarvis procesando en la nube..."):
       try:
-        if "chat_session" not in st.session_state:
-          gemini_model = genai.GenerativeModel(
-              model_name=modelo_seleccionado,
-              system_instruction=system_instruction,
-          )
-          st.session_state.chat_session = gemini_model.start_chat(history=[])
+        # Construir contexto completo con el historial para mantener la memoria
+        contents_historial = []
+        for r, c in cargar_historial_bd():
+          contents_historial.append(c)
 
-        respuesta_gemini = st.session_state.chat_session.send_message(
-            contenido_final
+        # Llamada directa al modelo usando la API moderna recomendada por Google
+        response = client.models.generate_content(
+            model=modelo_seleccionado,
+            contents=contents_historial,
         )
-        respuesta_texto = respuesta_gemini.text
+        respuesta_texto = response.text
         st.markdown(respuesta_texto)
 
         # Guardar respuesta del asistente en la base de datos SQLite
