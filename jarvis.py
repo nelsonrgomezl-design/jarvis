@@ -1,6 +1,6 @@
 import os
 import sqlite3
-import google.generativeai as genai
+from google import genai
 import streamlit as st
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
@@ -26,15 +26,15 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- CONFIGURACIÓN DE API KEY ---
+# --- CONFIGURACIÓN DE API KEY Y CLIENTE MODERNO ---
 API_KEY_FIJA = "AQ.Ab8RN6K6jGgFiPwQySgVLk37wvKQDEe_qH2c223euWTewfizsQ"
 
 api_key = API_KEY_FIJA
 if not api_key or "AQ.Ab8RN" not in api_key:
   api_key = os.environ.get("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
 
-if api_key:
-  genai.configure(api_key=api_key)
+# Inicializar el cliente oficial moderno de Google GenAI
+client = genai.Client(api_key=api_key)
 
 # --- BASE DE DATOS SQLITE (Memoria Persistente) ---
 DB_NAME = "historial_jarvis.db"
@@ -91,7 +91,7 @@ with st.sidebar:
   st.divider()
 
   st.subheader("🤖 Modelo")
-  st.info("Modelo activo: gemini-1.5-flash")
+  st.info("Modelo activo: gemini-flash-latest")
 
   st.divider()
 
@@ -111,8 +111,6 @@ with st.sidebar:
 
   if st.button("🧹 Borrar Memoria Completa"):
     limpiar_base_datos()
-    if "chat_session" in st.session_state:
-      del st.session_state.chat_session
     st.rerun()
 
 # --- INTERFAZ PRINCIPAL DE CHAT ---
@@ -123,6 +121,7 @@ st.markdown(
 )
 st.divider()
 
+# Instrucción de sistema
 system_instruction = (
     "Eres Jarvis, un asistente de IA experto en gestión de negocios,"
     " optimización operativa, logística y estrategia comercial. Ayudas a"
@@ -130,22 +129,6 @@ system_instruction = (
     " complejos de costos y tomar decisiones con un tono profesional, directo"
     " y orientado a resultados."
 )
-
-# Inicializar sesión del chat en Streamlit State asignando el modelo vigente
-if "chat_session" not in st.session_state:
-  try:
-    model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
-        system_instruction=system_instruction,
-    )
-    historial_previo = []
-    for r, c in cargar_historial_bd():
-      r_gem = "user" if r == "user" else "model"
-      historial_previo.append({"role": r_gem, "parts": [c]})
-
-    st.session_state.chat_session = model.start_chat(history=historial_previo)
-  except Exception as e:
-    st.error(f"Error al iniciar el modelo: {e}")
 
 # MOSTRAR MENSAJES PREVIOS EN PANTALLA
 filas_bd_visual = cargar_historial_bd()
@@ -171,22 +154,22 @@ if pregunta_usuario:
   with st.chat_message("user", avatar="👤"):
     st.markdown(pregunta_usuario)
 
-  # 2. Generar respuesta de Jarvis
+  # 2. Generar respuesta de Jarvis usando el cliente moderno
   with st.chat_message("assistant", avatar="⚡"):
     with st.spinner("Jarvis procesando..."):
       try:
-        # Re-verificar si la sesión del modelo está iniciada
-        if "chat_session" not in st.session_state:
-          model = genai.GenerativeModel(
-              model_name="gemini-1.5-flash",
-              system_instruction=system_instruction,
-          )
-          st.session_state.chat_session = model.start_chat(history=[])
+        # Construir el historial acumulado para pasarlo al modelo moderno
+        historial_textos = []
+        for r, c in cargar_historial_bd():
+          historial_textos.append(c)
 
-        respuesta_gemini = st.session_state.chat_session.send_message(
-            contenido_final
+        # Usar el modelo correcto y vigente que exige Google AI Studio
+        response = client.models.generate_content(
+            model="gemini-flash-latest",
+            contents=historial_textos,
         )
-        respuesta_texto = respuesta_gemini.text
+
+        respuesta_texto = response.text
         st.markdown(respuesta_texto)
 
         # Guardar respuesta del asistente en SQLite
@@ -213,4 +196,3 @@ if pregunta_usuario:
 
       except Exception as e:
         st.error(f"❌ Error al comunicarse con Gemini: {e}")
-          
