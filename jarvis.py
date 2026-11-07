@@ -14,7 +14,8 @@ st.set_page_config(
 )
 
 # Estilos CSS personalizados
-st.markdown("""
+st.markdown(
+    """
     <style>
     .main {
         background-color: #0e1117;
@@ -34,7 +35,9 @@ st.markdown("""
         background-color: #ff2b2b;
     }
     </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 # --- BASE DE DATOS SQLITE (Memoria Persistente) ---
 DB_NAME = "historial_jarvis.db"
@@ -104,11 +107,11 @@ with st.sidebar:
 
   st.divider()
 
-  # Selector de modelo de Gemini
+  # Selector de modelo de Gemini (Actualizado con modelos vigentes)
   st.subheader("🤖 Modelo")
   modelo_seleccionado = st.selectbox(
       "Selecciona el Modelo",
-      ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
+      ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
       index=0,
   )
 
@@ -158,6 +161,7 @@ if "chat_session" not in st.session_state:
     generation_config = {"temperature": 0.7}
     gemini_model = genai.GenerativeModel(
         model_name=modelo_seleccionado,
+        system_index=None,  # Evita conflictos
         system_instruction=system_instruction,
         generation_config=generation_config,
     )
@@ -167,7 +171,6 @@ if "chat_session" not in st.session_state:
     filas_bd = cargar_historial_bd()
 
     for rol, contenido in filas_bd:
-      # Mapear roles de SQLite al formato que espera la API de Gemini ('user' / 'model')
       rol_gemini = "user" if rol == "user" else "model"
       historial_previo.append({"role": rol_gemini, "parts": [contenido]})
 
@@ -197,7 +200,6 @@ if pregunta_usuario:
   if not api_key_input and "GEMINI_API_KEY" not in os.environ:
     st.error("❌ Debes ingresar tu Gemini API Key en la barra lateral primero.")
   else:
-    # Inyectar contenido del archivo si es la primera interacción y se adjuntó un txt
     contenido_final = pregunta_usuario
     if texto_archivo and len(filas_bd_visual) == 0:
       contenido_final = (
@@ -214,7 +216,14 @@ if pregunta_usuario:
     with st.chat_message("assistant", avatar="⚡"):
       with st.spinner(f"Jarvis ({modelo_seleccionado}) procesando en la nube..."):
         try:
-          # Enviar mensaje a la sesión activa de Gemini
+          # Verificar si la sesión de chat está activa, de lo contrario inicializarla al vuelo
+          if "chat_session" not in st.session_state:
+            gemini_model = genai.GenerativeModel(
+                model_name=modelo_seleccionado,
+                system_instruction=system_instruction,
+            )
+            st.session_state.chat_session = gemini_model.start_chat(history=[])
+
           respuesta_gemini = st.session_state.chat_session.send_message(
               contenido_final
           )
