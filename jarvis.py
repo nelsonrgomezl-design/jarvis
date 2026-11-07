@@ -27,14 +27,12 @@ st.markdown(
 )
 
 # --- INICIALIZACIÓN DEL CLIENTE Y API KEY ---
-# API Key tomada directamente de las variables de entorno o de los Secrets de Streamlit Cloud
 API_KEY_FIJA = "AQ.Ab8RN6K6jGgFiPwQySgVLk37wvKQDEe_qH2c223euWTewfizsQ"
 
 api_key = API_KEY_FIJA
 if not api_key or "AQ.Ab8RN" not in api_key:
   api_key = os.environ.get("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
 
-# Crear el cliente GenAI oficial
 client = None
 if api_key:
   try:
@@ -96,7 +94,7 @@ with st.sidebar:
   st.divider()
 
   st.subheader("🤖 Modelo")
-  st.info("Modelo activo: gemini-3.8-flash")
+  st.info("Modelo activo: Respaldo Automático Inteligente")
 
   st.divider()
 
@@ -161,21 +159,40 @@ if pregunta_usuario:
     with st.chat_message("user", avatar="👤"):
       st.markdown(pregunta_usuario)
 
-    # 2. Generar respuesta de Jarvis
+    # 2. Generar respuesta de Jarvis con respaldo automático de modelos
     with st.chat_message("assistant", avatar="⚡"):
-      with st.spinner("Jarvis procesando con gemini-3.8-flash..."):
+      with st.spinner("Jarvis procesando con respaldo automático..."):
         try:
-          # Construir historial para la llamada al cliente
           prompt_completo = f"Instrucciones de sistema: {system_instruction}\n\n"
           for r, c in cargar_historial_bd():
             rol_str = "Usuario" if r == "user" else "Jarvis"
             prompt_completo += f"{rol_str}: {c}\n"
 
-          # Modelo oficial activo gemini-3.8-flash
-          response = client.models.generate_content(
-              model="gemini-3.8-flash",
-              contents=prompt_completo,
-          )
+          # Lista de modelos que intentará secuencialmente si hay errores de alta demanda (503)
+          modelos_disponibles = [
+              "gemini-3.8-flash",
+              "gemini-2.5-flash",
+              "gemini-1.5-flash",
+          ]
+          response = None
+          ultimo_error = None
+
+          for modelo in modelos_disponibles:
+            try:
+              response = client.models.generate_content(
+                  model=modelo,
+                  contents=prompt_completo,
+              )
+              if response and response.text:
+                break
+            except Exception as ex:
+              ultimo_error = ex
+              continue
+
+          if response is None or not response.text:
+            raise ultimo_error or Exception(
+                "Todos los modelos de respaldo están ocupados temporalmente."
+            )
 
           respuesta_texto = response.text
           st.markdown(respuesta_texto)
