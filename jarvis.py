@@ -39,6 +39,18 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# --- CONFIGURACIÓN AUTOMÁTICA DE LA API KEY ---
+# Si configuras tu clave en los secretos de Streamlit Cloud, se leerá sola.
+# O puedes pegarla directamente aquí entre las comillas si prefieres dejarla fija:
+API_KEY_FIJA = ""
+
+if API_KEY_FIJA:
+  genai.configure(api_key=API_KEY_FIJA)
+elif "GEMINI_API_KEY" in st.secrets:
+  genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+elif "GEMINI_API_KEY" in os.environ:
+  genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+
 # --- BASE DE DATOS SQLITE (Memoria Persistente) ---
 DB_NAME = "historial_jarvis.db"
 
@@ -87,36 +99,14 @@ def limpiar_base_datos():
 # Inicializar base de datos
 inicializar_db()
 
-# --- PANEL LATERAL (CONFIGURACIÓN Y CREDENCIALES) ---
-# --- PANEL LATERAL (CONFIGURACIÓN Y CREDENCIALES) ---
+# --- PANEL LATERAL (CONFIGURACIÓN) ---
 with st.sidebar:
   st.title("⚡ Jarvis Control (Cloud)")
   st.caption("Asistente comercial potenciado con Google Gemini API.")
 
   st.divider()
 
-  # Configuración automática de la API Key (Oculta el cuadro de texto)
-  # Reemplaza 'TU_API_KEY_REAL' por tu clave generada en Google AI Studio si deseas dejarla fija
-  import os
-
-  API_KEY_FIJA = (
-      "TU_API_KEY_REAL"  # <--- Pega tu clave de Google AI Studio aquí entre comillas
-  )
-
-  if API_KEY_FIJA and API_KEY_FIJA != "TU_API_KEY_REAL":
-    genai.configure(api_key=API_KEY_FIJA)
-  elif "GEMINI_API_KEY" in os.environ:
-    genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-  else:
-    # Si no hay clave, usa un respaldo de entorno o solicita configurar secretos en Streamlit
-    st.warning(
-        "⚠️ Configura tu API Key en los secretos de Streamlit Cloud para no"
-        " ingresarla."
-    )
-
-  st.divider()
-
-  # Selector de modelo de Gemini (Usa el modelo estable actual)
+  # Selector de modelo de Gemini (Modelos estables y vigentes)
   st.subheader("🤖 Modelo")
   modelo_seleccionado = st.selectbox(
       "Selecciona el Modelo",
@@ -147,6 +137,7 @@ with st.sidebar:
     if "chat_session" in st.session_state:
       del st.session_state.chat_session
     st.rerun()
+
 # --- INTERFAZ PRINCIPAL DE CHAT ---
 st.title("💼 Jarvis - Asistente Comercial Gemini Pro")
 st.markdown(
@@ -169,7 +160,6 @@ if "chat_session" not in st.session_state:
     generation_config = {"temperature": 0.7}
     gemini_model = genai.GenerativeModel(
         model_name=modelo_seleccionado,
-        system_index=None,  # Evita conflictos
         system_instruction=system_instruction,
         generation_config=generation_config,
     )
@@ -187,16 +177,14 @@ if "chat_session" not in st.session_state:
     )
   except Exception as e:
     st.warning(
-        "⚠️ Por favor, ingresa tu API Key de Gemini en la barra lateral para"
-        " iniciar."
+        "⚠️ Configura tu API Key en los secretos de Streamlit Cloud o en el"
+        " código para iniciar."
     )
 
 # Mostrar el historial visual en pantalla cargado desde la BD
 filas_bd_visual = cargar_historial_bd()
 for rol, contenido in filas_bd_visual:
-  with st.chat_message(
-      rol, avatar="⚡" if rol == "assistant" else "👤"
-  ):  # Mantenemos visualmente el rol del asistente
+  with st.chat_message(rol, avatar="⚡" if rol == "assistant" else "👤"):
     st.markdown(contenido)
 
 # Entrada de texto del usuario
@@ -205,64 +193,56 @@ pregunta_usuario = st.chat_input(
 )
 
 if pregunta_usuario:
-  if not api_key_input and "GEMINI_API_KEY" not in os.environ:
-    st.error("❌ Debes ingresar tu Gemini API Key en la barra lateral primero.")
-  else:
-    contenido_final = pregunta_usuario
-    if texto_archivo and len(filas_bd_visual) == 0:
-      contenido_final = (
-          f"Información del documento del negocio cargado:\n\n{texto_archivo}\n\nCon"
-          f" base en esto responde: {pregunta_usuario}"
-      )
+  contenido_final = pregunta_usuario
+  if texto_archivo and len(filas_bd_visual) == 0:
+    contenido_final = (
+        f"Información del documento del negocio cargado:\n\n{texto_archivo}\n\nCon"
+        f" base en esto responde: {pregunta_usuario}"
+    )
 
-    # Guardar y mostrar mensaje del usuario
-    guardar_mensaje("user", pregunta_usuario)
-    with st.chat_message("user", avatar="👤"):
-      st.markdown(pregunta_usuario)
+  # Guardar y mostrar mensaje del usuario
+  guardar_mensaje("user", pregunta_usuario)
+  with st.chat_message("user", avatar="👤"):
+    st.markdown(pregunta_usuario)
 
-    # Generar respuesta con la API de Gemini
-    with st.chat_message("assistant", avatar="⚡"):
-      with st.spinner(f"Jarvis ({modelo_seleccionado}) procesando en la nube..."):
-        try:
-          # Verificar si la sesión de chat está activa, de lo contrario inicializarla al vuelo
-          if "chat_session" not in st.session_state:
-            gemini_model = genai.GenerativeModel(
-                model_name=modelo_seleccionado,
-                system_instruction=system_instruction,
-            )
-            st.session_state.chat_session = gemini_model.start_chat(history=[])
-
-          respuesta_gemini = st.session_state.chat_session.send_message(
-              contenido_final
+  # Generar respuesta con la API de Gemini
+  with st.chat_message("assistant", avatar="⚡"):
+    with st.spinner(f"Jarvis ({modelo_seleccionado}) procesando en la nube..."):
+      try:
+        if "chat_session" not in st.session_state:
+          gemini_model = genai.GenerativeModel(
+              model_name=modelo_seleccionado,
+              system_instruction=system_instruction,
           )
-          respuesta_texto = respuesta_gemini.text
-          st.markdown(respuesta_texto)
+          st.session_state.chat_session = gemini_model.start_chat(history=[])
 
-          # Guardar respuesta del asistente en la base de datos SQLite
-          guardar_mensaje("assistant", respuesta_texto)
+        respuesta_gemini = st.session_state.chat_session.send_message(
+            contenido_final
+        )
+        respuesta_texto = respuesta_gemini.text
+        st.markdown(respuesta_texto)
 
-          # Generación automática de PDF si se solicita
-          if (
-              "pdf" in pregunta_usuario.lower()
-              or "reporte" in pregunta_usuario.lower()
-          ):
-            nombre_pdf = "reporte_jarvis.pdf"
-            c = canvas.Canvas(nombre_pdf, pagesize=letter)
-            c.drawString(
-                100, 750, "Reporte Oficial - Jarvis Business Management"
-            )
-            c.drawString(100, 730, "Resumen de operaciones y cálculos:")
+        # Guardar respuesta del asistente en la base de datos SQLite
+        guardar_mensaje("assistant", respuesta_texto)
 
-            y = 700
-            for linea in respuesta_texto.split("\n"):
-              if y > 50:
-                c.drawString(100, y, linea[:90])
-                y -= 20
+        # Generación automática de PDF si se solicita
+        if (
+            "pdf" in pregunta_usuario.lower()
+            or "reporte" in pregunta_usuario.lower()
+        ):
+          nombre_pdf = "reporte_jarvis.pdf"
+          c = canvas.Canvas(nombre_pdf, pagesize=letter)
+          c.drawString(100, 750, "Reporte Oficial - Jarvis Business Management")
+          c.drawString(100, 730, "Resumen de operaciones y cálculos:")
 
-            c.save()
-            st.success(f"📄 ¡PDF generado con éxito: '{nombre_pdf}'!")
+          y = 700
+          for linea in respuesta_texto.split("\n"):
+            if y > 50:
+              c.drawString(100, y, linea[:90])
+              y -= 20
 
-        except Exception as e:
-          st.error(
-              f"❌ Error al comunicarse con la API de Gemini. Detalle: {e}"
-          )
+          c.save()
+          st.success(f"📄 ¡PDF generado con éxito: '{nombre_pdf}'!")
+
+      except Exception as e:
+        st.error(f"❌ Error al comunicarse con la API de Gemini. Detalle: {e}")
