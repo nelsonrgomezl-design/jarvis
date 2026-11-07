@@ -28,7 +28,7 @@ st.markdown(
 
 # --- CONFIGURACIÓN DE LA API KEY ---
 # PEGA TU CLAVE DE GOOGLE AI STUDIO AQUÍ ENTRE LAS COMILLAS:
-API_KEY_FIJA = "PEGA_AQUI_TU_API_KEY"
+API_KEY_FIJA = "AQ.Ab8RN6K6jGgFiPwQySgVLk37wvKQDEe_qH2c223euWTewfizsQ"
 
 # Lógica para detectar la clave automáticamente
 api_key = API_KEY_FIJA
