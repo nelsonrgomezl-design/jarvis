@@ -5,7 +5,7 @@ import streamlit as st
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
-# --- CONFIGURACIÓN DE LA PÁGINA Y ESTILO VISUAL AVANZADO ---
+# --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(
     page_title="Jarvis Business AI - Gemini Cloud",
     page_icon="⚡",
@@ -26,20 +26,14 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- CONFIGURACIÓN DE LA API KEY ---
-# PEGA TU CLAVE DE GOOGLE AI STUDIO AQUÍ ENTRE LAS COMILLAS:
+# --- CONFIGURACIÓN DE API KEY (CONFIGURADA AUTOMÁTICAMENTE) ---
 API_KEY_FIJA = "AQ.Ab8RN6K6jGgFiPwQySgVLk37wvKQDEe_qH2c223euWTewfizsQ"
 
-# Lógica para detectar la clave automáticamente
 api_key = API_KEY_FIJA
+if not api_key or "AQ.Ab8RN" not in api_key:
+  api_key = os.environ.get("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
 
-if not api_key or api_key == "PEGA_AQUI_TU_API_KEY":
-  if "GEMINI_API_KEY" in st.secrets:
-    api_key = st.secrets["GEMINI_API_KEY"]
-  elif "GEMINI_API_KEY" in os.environ:
-    api_key = os.environ["GEMINI_API_KEY"]
-
-if api_key and api_key != "PEGA_AQUI_TU_API_KEY":
+if api_key:
   genai.configure(api_key=api_key)
 
 # --- BASE DE DATOS SQLITE (Memoria Persistente) ---
@@ -90,7 +84,7 @@ def limpiar_base_datos():
 # Inicializar base de datos
 inicializar_db()
 
-# --- PANEL LATERAL (CONFIGURACIÓN) ---
+# --- PANEL LATERAL ---
 with st.sidebar:
   st.title("⚡ Jarvis Control (Cloud)")
   st.caption("Asistente comercial potenciado con Google Gemini API.")
@@ -101,7 +95,6 @@ with st.sidebar:
 
   st.divider()
 
-  # Carga de archivos de texto
   st.subheader("📂 Documentos de Negocio")
   archivo_subido = st.file_uploader(
       "Sube un archivo de texto (.txt)", type=["txt"]
@@ -116,7 +109,6 @@ with st.sidebar:
 
   st.divider()
 
-  # Utilidades y limpieza
   if st.button("🧹 Borrar Memoria Completa"):
     limpiar_base_datos()
     if "chat_session" in st.session_state:
@@ -139,28 +131,77 @@ system_instruction = (
     " y orientado a resultados."
 )
 
-# Mostrar historial visual en pantalla
+# Inicializar sesión del chat en Streamlit State si no existe
+if "chat_session" not in st.session_state:
+  try:
+    model = genai.GenerativeModel(
+        model_name="gemini-1.5-flash",
+        system_instruction=system_instruction,
+    )
+    historial_previo = []
+    for r, c in cargar_historial_bd():
+      r_gem = "user" if r == "user" else "model"
+      historial_previo.append({"role": r_gem, "parts": [c]})
+
+    st.session_state.chat_session = model.start_chat(history=historial_previo)
+  except Exception as e:
+    st.error(f"Error al iniciar el modelo: {e}")
+
+# MOSTRAR MENSAJES PREVIOS EN PANTALLA
 filas_bd_visual = cargar_historial_bd()
 for rol, contenido in filas_bd_visual:
-  st.chat_message(rol, avatar="⚡" if rol == "assistant" else "👤").markdown(
-      contenido
-  )
+  with st.chat_message(rol, avatar="⚡" if rol == "assistant" else "👤"):
+    st.markdown(contenido)
 
-# Entrada de texto del usuario
+# ENTRADA DEL USUARIO
 pregunta_usuario = st.chat_input(
     "Escribe tu consulta de negocio, cálculo o pide un reporte en PDF..."
 )
 
 if pregunta_usuario:
-  if not api_key or api_key == "PEGA_AQUI_TU_API_KEY":
-    st.error(
-        "❌ Pega tu Gemini API Key en la línea 30 del archivo jarvis.py en"
-        " GitHub."
+  contenido_final = pregunta_usuario
+  if texto_archivo and len(filas_bd_visual) == 0:
+    contenido_final = (
+        f"Información del documento del negocio cargado:\n\n{texto_archivo}\n\nCon"
+        f" base en esto responde: {pregunta_usuario}"
     )
-  else:
-    contenido_final = pregunta_usuario
-    if texto_archivo and len(filas_bd_visual) == 0:
-      contenido_final = (
-          f"Información del documento del negocio cargado:\n\n{texto_archivo}\n\nCon"
-          f" base en esto responde: {pregunta_usuario}"
-      )
+
+  # 1. Guardar y renderizar mensaje del usuario inmediatamente
+  guardar_mensaje("user", pregunta_usuario)
+  with st.chat_message("user", avatar="👤"):
+    st.markdown(pregunta_usuario)
+
+  # 2. Generar respuesta de Jarvis
+  with st.chat_message("assistant", avatar="⚡"):
+    with st.spinner("Jarvis procesando..."):
+      try:
+        respuesta_gemini = st.session_state.chat_session.send_message(
+            contenido_final
+        )
+        respuesta_texto = respuesta_gemini.text
+        st.markdown(respuesta_texto)
+
+        # Guardar respuesta del asistente en SQLite
+        guardar_mensaje("assistant", respuesta_texto)
+
+        # Generación de PDF si lo piden
+        if (
+            "pdf" in pregunta_usuario.lower()
+            or "reporte" in pregunta_usuario.lower()
+        ):
+          nombre_pdf = "reporte_jarvis.pdf"
+          c = canvas.Canvas(nombre_pdf, pagesize=letter)
+          c.drawString(
+              100, 750, "Reporte Oficial - Jarvis Business Management"
+          )
+          c.drawString(100, 730, "Resumen de operaciones y cálculos:")
+          y = 700
+          for linea in respuesta_texto.split("\n"):
+            if y > 50:
+              c.drawString(100, y, linea[:90])
+              y -= 20
+          c.save()
+          st.success(f"📄 ¡PDF generado con éxito: '{nombre_pdf}'!")
+
+      except Exception as e:
+        st.error(f"❌ Error al comunicarse con Gemini: {e}")
