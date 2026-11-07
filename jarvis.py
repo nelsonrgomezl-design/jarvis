@@ -33,7 +33,7 @@ api_key = API_KEY_FIJA
 if not api_key or "AQ.Ab8RN" not in api_key:
   api_key = os.environ.get("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
 
-# Inicializar el cliente oficial moderno de Google GenAI
+# Inicializar cliente de Google GenAI
 client = genai.Client(api_key=api_key)
 
 # --- BASE DE DATOS SQLITE (Memoria Persistente) ---
@@ -91,7 +91,7 @@ with st.sidebar:
   st.divider()
 
   st.subheader("🤖 Modelo")
-  st.info("Modelo activo: gemini-flash-latest")
+  st.info("Modelo activo: gemini-2.0-flash")
 
   st.divider()
 
@@ -121,7 +121,6 @@ st.markdown(
 )
 st.divider()
 
-# Instrucción de sistema
 system_instruction = (
     "Eres Jarvis, un asistente de IA experto en gestión de negocios,"
     " optimización operativa, logística y estrategia comercial. Ayudas a"
@@ -154,18 +153,18 @@ if pregunta_usuario:
   with st.chat_message("user", avatar="👤"):
     st.markdown(pregunta_usuario)
 
-  # 2. Generar respuesta de Jarvis usando el cliente moderno
+  # 2. Generar respuesta de Jarvis con el cliente moderno
   with st.chat_message("assistant", avatar="⚡"):
     with st.spinner("Jarvis procesando..."):
       try:
-        # Construir el historial acumulado para pasarlo al modelo moderno
+        # Construir el historial acumulado para pasarlo al modelo moderno de la librería `google-genai`
         historial_textos = []
         for r, c in cargar_historial_bd():
           historial_textos.append(c)
 
-        # Usar el modelo correcto y vigente que exige Google AI Studio
+        # Usamos 'gemini-2.0-flash' que es totalmente compatible con la nueva librería oficial de API
         response = client.models.generate_content(
-            model="gemini-flash-latest",
+            model="gemini-2.0-flash",
             contents=historial_textos,
         )
 
