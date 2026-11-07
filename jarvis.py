@@ -91,7 +91,7 @@ with st.sidebar:
   st.divider()
 
   st.subheader("🤖 Modelo")
-  st.info("Modelo activo: gemini-2.5-flash")
+  st.info("Modelo activo: gemini-1.5-flash")
 
   st.divider()
 
@@ -131,12 +131,11 @@ system_instruction = (
     " y orientado a resultados."
 )
 
-# Inicializar sesión del chat en Streamlit State
+# Inicializar sesión del chat en Streamlit State asignando el modelo vigente
 if "chat_session" not in st.session_state:
   try:
-    # Usamos gemini-2.5-flash que es la versión compatible actual
     model = genai.GenerativeModel(
-        model_name="gemini-2.5-flash",
+        model_name="gemini-1.5-flash",
         system_instruction=system_instruction,
     )
     historial_previo = []
@@ -176,6 +175,14 @@ if pregunta_usuario:
   with st.chat_message("assistant", avatar="⚡"):
     with st.spinner("Jarvis procesando..."):
       try:
+        # Re-verificar si la sesión del modelo está iniciada
+        if "chat_session" not in st.session_state:
+          model = genai.GenerativeModel(
+              model_name="gemini-1.5-flash",
+              system_instruction=system_instruction,
+          )
+          st.session_state.chat_session = model.start_chat(history=[])
+
         respuesta_gemini = st.session_state.chat_session.send_message(
             contenido_final
         )
@@ -206,3 +213,4 @@ if pregunta_usuario:
 
       except Exception as e:
         st.error(f"❌ Error al comunicarse con Gemini: {e}")
+          
