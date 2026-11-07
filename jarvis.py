@@ -1,7 +1,7 @@
 import os
 import sqlite3
-from google import genai
 import streamlit as st
+from google import genai
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
@@ -26,15 +26,21 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- CONFIGURACIÓN DE API KEY Y CLIENTE MODERNO ---
+# --- INICIALIZACIÓN DEL CLIENTE Y API KEY ---
+# API Key tomada directamente de las variables de entorno o de los Secrets de Streamlit Cloud
 API_KEY_FIJA = "AQ.Ab8RN6K6jGgFiPwQySgVLk37wvKQDEe_qH2c223euWTewfizsQ"
 
 api_key = API_KEY_FIJA
 if not api_key or "AQ.Ab8RN" not in api_key:
   api_key = os.environ.get("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
 
-# Inicializar cliente de Google GenAI
-client = genai.Client(api_key=api_key)
+# Crear el cliente GenAI oficial
+client = None
+if api_key:
+  try:
+    client = genai.Client(api_key=api_key)
+  except Exception as e:
+    st.error(f"Error inicializando el cliente GenAI: {e}")
 
 # --- BASE DE DATOS SQLITE (Memoria Persistente) ---
 DB_NAME = "historial_jarvis.db"
@@ -81,7 +87,6 @@ def limpiar_base_datos():
   conexion.close()
 
 
-# Inicializar base de datos
 inicializar_db()
 
 # --- PANEL LATERAL ---
@@ -91,7 +96,7 @@ with st.sidebar:
   st.divider()
 
   st.subheader("🤖 Modelo")
-  st.info("Modelo activo: gemini-2.0-flash")
+  st.info("Modelo activo: gemini-3.8-flash")
 
   st.divider()
 
@@ -129,7 +134,7 @@ system_instruction = (
     " y orientado a resultados."
 )
 
-# MOSTRAR MENSAJES PREVIOS EN PANTALLA
+# Mostrar historial visual en pantalla
 filas_bd_visual = cargar_historial_bd()
 for rol, contenido in filas_bd_visual:
   with st.chat_message(rol, avatar="⚡" if rol == "assistant" else "👤"):
@@ -141,57 +146,61 @@ pregunta_usuario = st.chat_input(
 )
 
 if pregunta_usuario:
-  contenido_final = pregunta_usuario
-  if texto_archivo and len(filas_bd_visual) == 0:
-    contenido_final = (
-        f"Información del documento del negocio cargado:\n\n{texto_archivo}\n\nCon"
-        f" base en esto responde: {pregunta_usuario}"
-    )
+  if not client:
+    st.error("❌ No se encontró la API Key de Gemini configurada.")
+  else:
+    contenido_final = pregunta_usuario
+    if texto_archivo and len(filas_bd_visual) == 0:
+      contenido_final = (
+          f"Información del documento del negocio cargado:\n\n{texto_archivo}\n\nCon"
+          f" base en esto responde: {pregunta_usuario}"
+      )
 
-  # 1. Guardar y renderizar mensaje del usuario inmediatamente
-  guardar_mensaje("user", pregunta_usuario)
-  with st.chat_message("user", avatar="👤"):
-    st.markdown(pregunta_usuario)
+    # 1. Guardar y mostrar mensaje del usuario
+    guardar_mensaje("user", pregunta_usuario)
+    with st.chat_message("user", avatar="👤"):
+      st.markdown(pregunta_usuario)
 
-  # 2. Generar respuesta de Jarvis con el cliente moderno
-  with st.chat_message("assistant", avatar="⚡"):
-    with st.spinner("Jarvis procesando..."):
-      try:
-        # Construir el historial acumulado para pasarlo al modelo moderno de la librería `google-genai`
-        historial_textos = []
-        for r, c in cargar_historial_bd():
-          historial_textos.append(c)
+    # 2. Generar respuesta de Jarvis
+    with st.chat_message("assistant", avatar="⚡"):
+      with st.spinner("Jarvis procesando con gemini-3.8-flash..."):
+        try:
+          # Construir historial para la llamada al cliente
+          prompt_completo = f"Instrucciones de sistema: {system_instruction}\n\n"
+          for r, c in cargar_historial_bd():
+            rol_str = "Usuario" if r == "user" else "Jarvis"
+            prompt_completo += f"{rol_str}: {c}\n"
 
-        # Usamos 'gemini-2.0-flash' que es totalmente compatible con la nueva librería oficial de API
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=historial_textos,
-        )
-
-        respuesta_texto = response.text
-        st.markdown(respuesta_texto)
-
-        # Guardar respuesta del asistente en SQLite
-        guardar_mensaje("assistant", respuesta_texto)
-
-        # Generación de PDF si se solicita
-        if (
-            "pdf" in pregunta_usuario.lower()
-            or "reporte" in pregunta_usuario.lower()
-        ):
-          nombre_pdf = "reporte_jarvis.pdf"
-          c = canvas.Canvas(nombre_pdf, pagesize=letter)
-          c.drawString(
-              100, 750, "Reporte Oficial - Jarvis Business Management"
+          # Modelo oficial activo gemini-3.8-flash
+          response = client.models.generate_content(
+              model="gemini-3.8-flash",
+              contents=prompt_completo,
           )
-          c.drawString(100, 730, "Resumen de operaciones y cálculos:")
-          y = 700
-          for linea in respuesta_texto.split("\n"):
-            if y > 50:
-              c.drawString(100, y, linea[:90])
-              y -= 20
-          c.save()
-          st.success(f"📄 ¡PDF generado con éxito: '{nombre_pdf}'!")
 
-      except Exception as e:
-        st.error(f"❌ Error al comunicarse con Gemini: {e}")
+          respuesta_texto = response.text
+          st.markdown(respuesta_texto)
+
+          # Guardar respuesta del asistente en SQLite
+          guardar_mensaje("assistant", respuesta_texto)
+
+          # Generación de PDF si se solicita
+          if (
+              "pdf" in pregunta_usuario.lower()
+              or "reporte" in pregunta_usuario.lower()
+          ):
+            nombre_pdf = "reporte_jarvis.pdf"
+            c = canvas.Canvas(nombre_pdf, pagesize=letter)
+            c.drawString(
+                100, 750, "Reporte Oficial - Jarvis Business Management"
+            )
+            c.drawString(100, 730, "Resumen de operaciones y cálculos:")
+            y = 700
+            for linea in respuesta_texto.split("\n"):
+              if y > 50:
+                c.drawString(100, y, linea[:90])
+                y -= 20
+            c.save()
+            st.success(f"📄 ¡PDF generado con éxito: '{nombre_pdf}'!")
+
+        except Exception as e:
+          st.error(f"❌ Error al comunicarse con Gemini: {e}")
